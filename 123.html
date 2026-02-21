@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Driver Assistant - Auto Save</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- 引入 PapaParse 用于解析 CSV 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <style>
+        #map { height: 50vh; width: 100%; z-index: 0; }
+        .location-card { transition: all 0.2s; }
+        .location-card:active { transform: scale(0.98); background-color: #f3f4f6; }
+        .leaflet-popup-content-wrapper { border-radius: 8px; }
+        .leaflet-popup-content { margin: 10px; line-height: 1.6; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800">
+
+    <!-- Header -->
+    <div class="bg-yellow-400 p-4 shadow-md sticky top-0 z-50 relative">
+        <!-- 隐藏的管理员入口 (右上角半透明小齿轮) -->
+        <div class="absolute top-4 right-4 text-yellow-700 opacity-30 hover:opacity-100 cursor-pointer text-lg transition" onclick="document.getElementById('csv-file').click()" title="Admin Setup">
+            ⚙️
+        </div>
+        <!-- 彻底隐藏的文件选择器 -->
+        <input type="file" id="csv-file" accept=".csv" class="hidden" />
+
+        <h1 class="text-xl font-bold text-center text-black">🚖 NYC Smart Dispatch</h1>
+        <div class="text-center mt-2">
+            <span class="inline-block bg-black text-yellow-400 px-3 py-1 rounded text-xs font-mono">
+                NYC: <span id="ny-day">...</span> <span id="ny-time">...</span>
+            </span>
+        </div>
+    </div>
+
+    <div id="map" class="shadow-inner border-b-4 border-yellow-400"></div>
+
+    <div class="container mx-auto p-4 max-w-md -mt-6 relative z-10">
+        
+        <button onclick="findNearestLocations()" class="w-full bg-black text-white py-4 rounded-xl shadow-lg font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+            Find High Demand Spots
+        </button>
+
+        <p id="status-msg" class="text-center text-sm text-gray-500 mt-2">Checking system readiness...</p>
+        
+        <div id="error-alert" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-2 text-xs" role="alert">
+            <span class="block sm:inline" id="error-text"></span>
+        </div>
+
+        <div id="recommendation-list" class="mt-4 space-y-3 pb-8"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const map = L.map('map').setView([40.7580, -73.9855], 11);
+        let userMarker = null;
+        let recommendationMarkers = []; 
+        let demandData = []; 
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // ==========================================
+        // ▼▼▼ 自动记忆功能 (Local Storage) ▼▼▼
+        // ==========================================
+
+        // 页面加载时，检查是否已经有保存过的数据
+        function initApp() {
+            const savedData = localStorage.getItem('nycTaxiDemandData');
+            if (savedData) {
+                try {
+                    demandData = JSON.parse(savedData);
+                    document.getElementById('status-msg').innerHTML = `✅ System Ready: <span class="font-bold">${demandData.length}</span> zones loaded.`;
+                } catch (e) {
+                    console.error("Memory corrupted, please re-upload.");
+                    clearData();
+                }
+            } else {
+                document.getElementById('status-msg').innerText = "System Offline: Waiting for data...";
+            }
+        }
+
+        // 清除保存的数据 (可通过在控制台输入 clearData() 调用)
+        function clearData() {
+            localStorage.removeItem('nycTaxiDemandData');
+            demandData = [];
+            document.getElementById('status-msg').innerText = "System memory cleared.";
+            document.getElementById('recommendation-list').innerHTML = '';
+        }
+
+        // 处理 CSV 上传并永久保存
+        document.getElementById('csv-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const statusMsg = document.getElementById('status-msg');
+            statusMsg.innerText = "⏳ Parsing and saving data to memory...";
+
+            Papa.parse(file, {
+                header: true,          
+                dynamicTyping: true,   
+                skipEmptyLines: true,  
+                complete: function(results) {
+                    // 适配你表格中的 PULocationID
+                    demandData = results.data
+                        .filter(row => row.PULocationID != null) // 过滤掉空行
+                        .map(row => ({
+                            weekday: row.weekday,
+                            hour: row.hour,
+                            Location: row.PULocationID, // 把 PULocationID 映射给代码核心逻辑
+                            name: row.name,
+                            zone: row.zone,
+                            count: row.count,
+                            lon: row.lon,
+                            lat: row.lat
+                        }));
+
+                    try {
+                        // 永久保存到浏览器
+                        localStorage.setItem('nycTaxiDemandData', JSON.stringify(demandData));
+                        
+                        statusMsg.innerHTML = `✅ Admin Setup Complete! <span class="font-bold">${demandData.length}</span> zones loaded.`;
+                    } catch (err) {
+                        statusMsg.innerText = "❌ Browser memory full, running in temp mode.";
+                    }
+                },
+                error: function(err) {
+                    statusMsg.innerHTML = `❌ Error parsing CSV file.`;
+                }
+            });
+        });
+
+        // 启动应用
+        initApp();
+
+        // --- 获取实时纽约时间 ---
+        function getNYCState() {
+            const now = new Date();
+            const hourFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+            let hour = parseInt(hourFormatter.format(now));
+            if (hour === 24) hour = 0; 
+
+            // 注意：你的表格中 weekday=1 应该代表周一
+            const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+            const dayStr = dayFormatter.format(now); 
+            const dayMap = { "Sun":0, "Mon":1, "Tue":2, "Wed":3, "Thu":4, "Fri":5, "Sat":6 };
+            const dayIndex = dayMap[dayStr]; 
+
+            return { hour, dayIndex, dayStr };
+        }
+
+        // --- 更新顶部时钟 ---
+        function updateClock() {
+            const state = getNYCState();
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute:'2-digit' });
+            const enDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            document.getElementById('ny-day').innerText = enDays[state.dayIndex];
+            document.getElementById('ny-time').innerText = timeStr;
+        }
+        setInterval(updateClock, 1000); 
+        updateClock();
+
+        // --- 计算地球上两点距离 ---
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            var R = 6371; 
+            var dLat = deg2rad(lat2 - lat1);
+            var dLon = deg2rad(lon2 - lon1);
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; 
+        }
+
+        function deg2rad(deg) { return deg * (Math.PI / 180); }
+
+        // --- 核心算法 ---
+        function showRecommendations(userLat, userLng, isSimulation = false) {
+            const statusMsg = document.getElementById('status-msg');
+            const listContainer = document.getElementById('recommendation-list');
+            const errorAlert = document.getElementById('error-alert');
+            
+            if (demandData.length === 0) {
+                document.getElementById('error-text').innerText = "Please upload your CSV data file first to save it to memory!";
+                errorAlert.classList.remove('hidden');
+                return;
+            }
+
+            const nycState = getNYCState(); 
+
+            // LGA 坐标 (拉瓜迪亚机场)
+            const LGA_LAT = 40.7769;
+            const LGA_LON = -73.8739;
+            const userDistToLGA = getDistanceFromLatLonInKm(userLat, userLng, LGA_LAT, LGA_LON);
+
+            if (isSimulation) {
+                statusMsg.innerHTML = `⚠️ Simulation active | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
+                document.getElementById('error-text').innerText = "Note: GPS unavailable, using simulated location (Times Square).";
+                errorAlert.classList.remove('hidden');
+            } else {
+                statusMsg.innerHTML = `✅ Found matches | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
+                errorAlert.classList.add('hidden');
+            }
+
+            // 清理旧标记
+            if (userMarker) map.removeLayer(userMarker);
+            recommendationMarkers.forEach(marker => map.removeLayer(marker));
+            recommendationMarkers = []; 
+
+            // 添加用户标记
+            userMarker = L.marker([userLat, userLng]).addTo(map)
+                .bindPopup(isSimulation ? '<b>Simulated Location</b>' : '<b>Your Location</b>').openPopup();
+
+            // 1. 过滤当前时间的数据
+            let currentHourData = demandData.filter(loc => 
+                loc.weekday === nycState.dayIndex && loc.hour === nycState.hour
+            );
+
+            // 2. 空间过滤规则 (相交引力圈)
+            let validLocations = [];
+            currentHourData.forEach(loc => {
+                const distFromUser = getDistanceFromLatLonInKm(userLat, userLng, loc.lat, loc.lon);
+                const distFromSpotToLGA = getDistanceFromLatLonInKm(loc.lat, loc.lon, LGA_LAT, LGA_LON);
+
+                // 我和推荐距离 <= 我和LGA距离 且 推荐和LGA距离 <= 我和LGA距离
+                if (distFromUser <= userDistToLGA + 0.1 && distFromSpotToLGA <= userDistToLGA + 0.1) {
+                    validLocations.push({
+                        ...loc,
+                        distance: distFromUser,
+                        distToLGA: distFromSpotToLGA
+                    });
+                }
+            });
+
+            // 3. 排序算法
+            validLocations.sort((a, b) => {
+                // 如果在8km以内，强制推 LGA (ID:138 或 名字包含 LaGuardia)
+                if (userDistToLGA < 8) {
+                    const isALGA = a.Location === 138 || a.name.includes("LaGuardia") || a.name.includes("LGA");
+                    const isBLGA = b.Location === 138 || b.name.includes("LaGuardia") || b.name.includes("LGA");
+                    if (isALGA && !isBLGA) return -1;
+                    if (!isALGA && isBLGA) return 1;
+                }
+                return b.count - a.count; 
+            });
+
+            // 取出前 3 个
+            let top3 = validLocations.slice(0, 3);
+            const bounds = L.latLngBounds([ [userLat, userLng] ]); 
+
+            listContainer.innerHTML = '';
+
+            // 如果没有匹配的，强制指派 LGA
+            if (top3.length === 0) {
+                listContainer.innerHTML = `<div class="text-xs text-center text-gray-500 mb-2">No specific matching spots. Heading to LGA is recommended.</div>`;
+                top3 = [{
+                    name: "LaGuardia Airport (LGA)",
+                    zone: "Queens",
+                    Location: 138, 
+                    count: "N/A (Default)",
+                    lat: LGA_LAT,
+                    lon: LGA_LON,
+                    distance: userDistToLGA
+                }];
+            }
+
+            top3.forEach((loc, index) => {
+                const distanceStr = loc.distance.toFixed(1) + " km";
+                const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lon}`;
+
+                const popupContent = `
+                    <div style="text-align:center; min-width:140px">
+                        <b style="font-size:14px">#${index + 1} ${loc.name}</b><br>
+                        <span style="font-size:11px; color:#666">${loc.zone} | LocID: ${loc.Location}</span><br>
+                        <div style="margin: 5px 0; font-size:13px; color:#c2410c; font-weight:bold;">🔥 Demand: ${loc.count} pickups</div>
+                        <div style="margin: 5px 0; font-size:12px">📍 Dist ${distanceStr}</div>
+                        <a href="${googleMapsUrl}" target="_blank" 
+                           style="background-color:#000; color:#fcba03; padding:6px 12px; border-radius:6px; text-decoration:none; font-size:12px; display:inline-block; font-weight:bold; margin-top:4px;">
+                           🚀 Navigate
+                        </a>
+                    </div>
+                `;
+
+                const marker = L.marker([loc.lat, loc.lon])
+                    .addTo(map)
+                    .bindPopup(popupContent);
+                
+                recommendationMarkers.push(marker);
+                bounds.extend([loc.lat, loc.lon]);
+
+                const card = `
+                    <a href="${googleMapsUrl}" target="_blank" class="location-card block bg-white p-4 rounded-xl shadow border-l-4 border-yellow-400 no-underline text-black">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="font-bold text-lg text-gray-900">#${index + 1} ${loc.name}</div>
+                                <div class="text-sm text-gray-500 mt-1">
+                                    📍 Dist: <span class="font-bold text-blue-600">${distanceStr}</span>
+                                </div>
+                                <div class="flex gap-2 mt-2">
+                                    <div class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded border border-gray-200">
+                                        Zone: ${loc.zone}
+                                    </div>
+                                    <div class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded border border-orange-200 font-bold">
+                                        🔥 Demand: ${loc.count}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-blue-50 p-2 rounded-full self-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                    </a>
+                `;
+                listContainer.innerHTML += card;
+            });
+
+            if (top3.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+        function findNearestLocations() {
+            const statusMsg = document.getElementById('status-msg');
+            const listContainer = document.getElementById('recommendation-list');
+            const errorAlert = document.getElementById('error-alert');
+            
+            if (demandData.length === 0) {
+                document.getElementById('error-text').innerText = "Please upload your CSV data file first to save it to memory!";
+                errorAlert.classList.remove('hidden');
+                return;
+            }
+
+            statusMsg.innerText = "Scanning database for current hour...";
+            listContainer.innerHTML = ''; 
+            errorAlert.classList.add('hidden');
+
+            if (!navigator.geolocation) {
+                showRecommendations(40.7580, -73.9855, true);
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    showRecommendations(position.coords.latitude, position.coords.longitude, false);
+                }, 
+                (error) => {
+                    console.warn("GPS Error", error);
+                    showRecommendations(40.7580, -73.9855, true);
+                },
+                { timeout: 5000, enableHighAccuracy: true }
+            );
+        }
+    </script>
+</body>
+</html>
