@@ -37,6 +37,7 @@
         </div>
     </div>
 
+    <!-- 地图初始视角已调整到 JFK 附近 -->
     <div id="map" class="shadow-inner border-b-4 border-yellow-400"></div>
 
     <div class="container mx-auto p-4 max-w-md -mt-6 relative z-10">
@@ -60,7 +61,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        const map = L.map('map').setView([40.7580, -73.9855], 11);
+        // 初始地图中心定位在 JFK 机场
+        const map = L.map('map').setView([40.6413, -73.7781], 11);
         let userMarker = null;
         let recommendationMarkers = []; 
         let demandData = []; 
@@ -116,7 +118,7 @@
                         .map(row => ({
                             weekday: row.weekday,
                             hour: row.hour,
-                            Location: row.PULocationID, // 把 PULocationID 映射给代码核心逻辑
+                            Location: row.PULocationID, 
                             name: row.name,
                             zone: row.zone,
                             count: row.count,
@@ -149,10 +151,11 @@
             let hour = parseInt(hourFormatter.format(now));
             if (hour === 24) hour = 0; 
 
-            // 注意：你的表格中 weekday=1 应该代表周一
             const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
             const dayStr = dayFormatter.format(now); 
-            const dayMap = { "Sun":0, "Mon":1, "Tue":2, "Wed":3, "Thu":4, "Fri":5, "Sat":6 };
+            
+            // 【已更新】匹配你的数据集格式: 1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat
+            const dayMap = { "Sun":1, "Mon":2, "Tue":3, "Wed":4, "Thu":5, "Fri":6, "Sat":7 };
             const dayIndex = dayMap[dayStr]; 
 
             return { hour, dayIndex, dayStr };
@@ -163,7 +166,9 @@
             const state = getNYCState();
             const now = new Date();
             const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute:'2-digit' });
-            const enDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            
+            // 索引 1 对应 Sun, 索引 7 对应 Sat (第0个位置空置)
+            const enDays = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
             document.getElementById('ny-day').innerText = enDays[state.dayIndex];
             document.getElementById('ny-time').innerText = timeStr;
         }
@@ -203,7 +208,8 @@
 
             if (isSimulation) {
                 statusMsg.innerHTML = `⚠️ Simulation active | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
-                document.getElementById('error-text').innerText = "Note: GPS unavailable, using simulated location (Times Square).";
+                // 【已更新】模拟位置文本提示
+                document.getElementById('error-text').innerText = "Note: GPS unavailable, using simulated location (JFK Airport).";
                 errorAlert.classList.remove('hidden');
             } else {
                 statusMsg.innerHTML = `✅ Found matches | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
@@ -217,7 +223,7 @@
 
             // 添加用户标记
             userMarker = L.marker([userLat, userLng]).addTo(map)
-                .bindPopup(isSimulation ? '<b>Simulated Location</b>' : '<b>Your Location</b>').openPopup();
+                .bindPopup(isSimulation ? '<b>Simulated Location (JFK)</b>' : '<b>Your Location</b>').openPopup();
 
             // 1. 过滤当前时间的数据
             let currentHourData = demandData.filter(loc => 
@@ -240,7 +246,7 @@
                 }
             });
 
-            // 3. 排序算法
+            // 3. 排序算法 (距离优先，2公里范围内比单量)
             validLocations.sort((a, b) => {
                 // 如果在8km以内，强制推 LGA (ID:138 或 名字包含 LaGuardia)
                 if (userDistToLGA < 8) {
@@ -249,6 +255,13 @@
                     if (isALGA && !isBLGA) return -1;
                     if (!isALGA && isBLGA) return 1;
                 }
+                
+                // 如果两地距离司机的距离相差超过 2 公里，优先推荐距离近的
+                if (Math.abs(a.distance - b.distance) > 2) {
+                    return a.distance - b.distance; 
+                }
+                
+                // 否则（在距离差不多的情况下），推荐订单量高的
                 return b.count - a.count; 
             });
 
@@ -345,7 +358,8 @@
             errorAlert.classList.add('hidden');
 
             if (!navigator.geolocation) {
-                showRecommendations(40.7580, -73.9855, true);
+                // 【已更新】如果无法获取定位，以 JFK (40.6413, -73.7781) 为模拟出发点
+                showRecommendations(40.6413, -73.7781, true);
                 return;
             }
 
@@ -355,7 +369,8 @@
                 }, 
                 (error) => {
                     console.warn("GPS Error", error);
-                    showRecommendations(40.7580, -73.9855, true);
+                    // 【已更新】如果是定位被拒绝，以 JFK 为模拟出发点
+                    showRecommendations(40.6413, -73.7781, true);
                 },
                 { timeout: 5000, enableHighAccuracy: true }
             );
