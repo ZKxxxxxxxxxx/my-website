@@ -3041,7 +3041,7 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
 
                 const popupContent = `
                     <div style="text-align:center; min-width:140px">
-                        <b style="font-size:14px">#${index + 1} ${loc.name}</b><br>
+                        <b style="font-size:14px"># ${loc.name}</b><br>
                         <span style="font-size:11px; color:#666">${loc.zone} | LocID: ${loc.Location}</span><br>
                         <div style="margin: 5px 0; font-size:13px; color:#c2410c; font-weight:bold;">🔥 Demand: ${loc.count} pickups</div>
                         <div style="margin: 5px 0; font-size:12px">📍 Dist ${distanceStr}</div>
@@ -3063,7 +3063,7 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
                     <a href="${googleMapsUrl}" target="_blank" class="location-card block bg-white p-4 rounded-xl shadow border-l-4 border-yellow-400 no-underline text-black">
                         <div class="flex justify-between items-start">
                             <div>
-                                <div class="font-bold text-lg text-gray-900">#${index + 1} ${loc.name}</div>
+                                <div class="font-bold text-lg text-gray-900"># ${loc.name}</div>
                                 <div class="text-sm text-gray-500 mt-1">
                                     📍 Dist: <span class="font-bold text-blue-600">${distanceStr}</span>
                                 </div>
@@ -3120,3 +3120,4 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
     </script>
 </body>
 </html>
+
