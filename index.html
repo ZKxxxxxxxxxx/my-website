@@ -2875,11 +2875,11 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
         // --- 获取实时纽约时间 ---
         function getNYCState() {
             const now = new Date();
-            const hourFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+            const hourFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Melbourne', hour: 'numeric', hour12: false });
             let hour = parseInt(hourFormatter.format(now));
             if (hour === 24) hour = 0; 
 
-            const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+            const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Melbourne', weekday: 'short' });
             const dayStr = dayFormatter.format(now); 
             
             // 匹配你的数据集格式: 1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat
@@ -2893,7 +2893,7 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
         function updateClock() {
             const state = getNYCState();
             const now = new Date();
-            const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute:'2-digit' });
+            const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'Australia/Melbourne', hour: '2-digit', minute:'2-digit' });
             
             const enDays = ["", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
             document.getElementById('ny-day').innerText = enDays[state.dayIndex] || "NYC";
