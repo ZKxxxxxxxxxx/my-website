@@ -22,7 +22,7 @@
 
     <!-- Header -->
     <div class="bg-yellow-400 p-4 shadow-md sticky top-0 z-50">
-        <h1 class="text-xl font-bold text-center text-black">🚖 NYC Smart Dispatch</h1>
+        <h1 class="text-xl font-bold text-center text-black">🚖 NYC E-Hail LGA Strategy Tool</h1>
         <div class="text-center mt-2">
             <span class="inline-block bg-black text-yellow-400 px-3 py-1 rounded text-xs font-mono">
                 NYC: <span id="ny-day">...</span> <span id="ny-time">...</span>
@@ -40,7 +40,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
-            Find High Demand Spots
+            Find High E-hail Demand Area
         </button>
 
         <p id="status-msg" class="text-center text-sm text-gray-500 mt-2">Initializing database...</p>
@@ -2933,12 +2933,42 @@ weekday,hour,PULocationID,name,zone,count,lon,lat
             const LGA_LON = -73.8739;
             const userDistToLGA = getDistanceFromLatLonInKm(userLat, userLng, LGA_LAT, LGA_LON);
 
+            const weekdayNames = [
+                "",
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday"
+            ];
+
+            const weekdayLabel = weekdayNames[nycState.dayIndex];
+
+            const startHour = nycState.hour;
+            const endHour = (nycState.hour + 1) % 24;
+
+            const startLabel = startHour.toString().padStart(2, "0");
+            const endLabel = endHour.toString().padStart(2, "0");
+
             if (isSimulation) {
-                statusMsg.innerHTML = `⚠️ Simulation active | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
+                statusMsg.innerHTML = `
+                ⚠️ Simulation active | ${weekdayLabel}, ${startLabel}:00 - ${endLabel}:00
+                <br>
+                <span class="text-xs text-blue-600 font-bold">
+                Your dist to LGA: ${userDistToLGA.toFixed(1)} km
+                </span>`;
                 document.getElementById('error-text').innerText = "Note: GPS unavailable, using simulated location (JFK Airport).";
                 errorAlert.classList.remove('hidden');
             } else {
-                statusMsg.innerHTML = `✅ Found matches | Wkday ${nycState.dayIndex}, Hr ${nycState.hour}<br><span class="text-xs text-blue-600 font-bold">Your dist to LGA: ${userDistToLGA.toFixed(1)} km</span>`;
+                statusMsg.innerHTML = `
+                ✅ Found matches | ${weekdayLabel}, ${startLabel}:00 - ${endLabel}:00
+                <br>
+                <span class="text-xs text-blue-600 font-bold">
+                Your dist to LGA: ${userDistToLGA.toFixed(1)} km
+                </span>`;
+                
                 errorAlert.classList.add('hidden');
             }
 
